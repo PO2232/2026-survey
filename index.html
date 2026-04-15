@@ -704,30 +704,77 @@ const scenarios = {
   }
 };
 
+// ★★★ 將 URL 移到最上方，讓前後端都能共用 ★★★
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwS0cRKCFjiNeOzCRUHEETZ1XFS-x1REnJvFHcfIxvRQzuLzji__6lW63IOXdekSHgf/exec';
+
 // ============================================================
-// INIT
+// INIT - 動態取得配額
 // ============================================================
 const totalPages = 5;
 let currentPage = 1;
-const assignedScenario = Math.floor(Math.random() * 8) + 1;
-const scenarioData = scenarios[assignedScenario];
+let assignedScenario = 1; // 先給預設值，稍後由後端覆寫
+let scenarioData;
 
-document.getElementById('scenario-specific').innerHTML = scenarioData.text;
+// 取得 Loading 畫面元素
+const loadingEl = document.getElementById('loading');
+const loadingText = loadingEl.querySelector('p');
 
-// Build 6-point Likert scales
-const scaleLabels = ['非常<br>不同意','不<br>同意','有點<br>不同意','有點<br>同意','同意','非常<br>同意'];
-document.querySelectorAll('.likert-scale').forEach(container => {
-  const name = container.dataset.name;
-  for (let i = 1; i <= 6; i++) {
-    const label = document.createElement('label');
-    label.className = 'likert-option';
-    label.innerHTML = `<input type="radio" name="${name}" value="${i}"><div class="dot">${i}</div><div class="scale-label">${scaleLabels[i-1]}</div>`;
-    container.appendChild(label);
+async function initSurvey() {
+  // 1. 網頁載入時，先顯示 Loading 畫面
+  loadingText.textContent = '正在為您分配問卷題目，請稍候...';
+  loadingEl.classList.add('active');
+
+  try {
+    // 2. 向您的 GAS Web App 發送 GET 請求，取得未額滿的情境
+    const response = await fetch(GOOGLE_SCRIPT_URL);
+    const data = await response.json();
+
+    // 3. 判斷是否全部額滿
+    if (data.isFull) {
+      alert("本問卷已達預計收集份數，感謝您的支持與參與！");
+      document.body.innerHTML = "<h2 style='text-align:center;margin-top:20vh;color:#2c5f8a;'>本問卷已額滿結束，由衷感謝您的參與！</h2>";
+      return; // 終止後續執行
+    }
+    
+    // 4. 取得後端分配的情境
+    assignedScenario = data.scenarioId;
+    
+  } catch (error) {
+    // 萬一網路連線不穩或出錯，做個保底機制（退回純前端隨機）
+    console.error("無法取得配額，改用本地隨機分配：", error);
+    assignedScenario = Math.floor(Math.random() * 8) + 1;
   }
-});
+
+  // 5. 根據分配到的情境，將文字渲染到畫面上
+  scenarioData = scenarios[assignedScenario];
+  document.getElementById('scenario-specific').innerHTML = scenarioData.text;
+
+  // 6. Build 6-point Likert scales (建立信任量表選項)
+  const scaleLabels = ['非常<br>不同意','不<br>同意','有點<br>不同意','有點<br>同意','同意','非常<br>同意'];
+  document.querySelectorAll('.likert-scale').forEach(container => {
+    const name = container.dataset.name;
+    for (let i = 1; i <= 6; i++) {
+      const label = document.createElement('label');
+      label.className = 'likert-option';
+      label.innerHTML = `<input type="radio" name="${name}" value="${i}"><div class="dot">${i}</div><div class="scale-label">${scaleLabels[i-1]}</div>`;
+      container.appendChild(label);
+    }
+  });
+
+  // 7. 初始化完成，隱藏 Loading 畫面，並把 Loading 文字改回備用
+  loadingEl.classList.remove('active');
+  loadingText.textContent = '正在送出您的問卷，請稍候...';
+  
+  // 更新初始進度條
+  updateProgress();
+}
+
+// 執行問卷初始化
+initSurvey();
+
 
 // ============================================================
-// NAVIGATION
+// NAVIGATION (切換頁面邏輯)
 // ============================================================
 function goToPage(n) {
   document.getElementById(`page-${currentPage}`).classList.remove('active');
@@ -777,10 +824,6 @@ function hideError(id) { document.getElementById(id).classList.remove('show'); }
 // ============================================================
 // SUBMIT → Google Sheets
 // ============================================================
-
-// ★★★ 請將這裡替換成你自己的 Google Apps Script Web App URL ★★★
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzqGEKaHhrFLdxtzmIRW8PFA077Iih4CMR7xuc3tDLAnXVBsqKoLtGeCM0NBPZNcxh_/exec';
-
 function submitSurvey() {
   const gender = document.getElementById('demo-gender').value;
   const age = document.getElementById('demo-age').value;
@@ -831,8 +874,6 @@ function submitSurvey() {
     goToPage(5);
   });
 }
-
-updateProgress();
 </script>
 </body>
 </html>
